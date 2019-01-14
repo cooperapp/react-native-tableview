@@ -389,38 +389,63 @@ RCT_NOT_IMPLEMENTED(-initWithCoder:(NSCoder *)aDecoder)
 
 - (void)setSections:(NSArray *)sections
 {
-    _sections = [NSMutableArray arrayWithCapacity:[sections count]];
+    BOOL needsReload = sections.count != _sections.count;
     
-    // create selected indexes
-    _selectedIndexes = [NSMutableArray arrayWithCapacity:[sections count]];
+    NSMutableArray *indexPathsToReload = [[NSMutableArray alloc] init];
+    NSMutableArray *tmpSections = [NSMutableArray arrayWithCapacity:[sections count]];
     
-    BOOL found = NO;
-    for (NSDictionary *section in sections){
+    int sectionCounter = 0;
+    for (NSDictionary *section in sections) {
         NSMutableDictionary *sectionData = [NSMutableDictionary dictionaryWithDictionary:section];
         NSMutableArray *allItems = [NSMutableArray array];
-        if (self.additionalItems){
+        
+        if (self.additionalItems) {
             [allItems addObjectsFromArray:self.additionalItems];
         }
         [allItems addObjectsFromArray:sectionData[@"items"]];
-        
+
+        if (!needsReload) {
+            needsReload = [_sections[sectionCounter][@"items"] count] != allItems.count;
+        }
         NSMutableArray *items = [NSMutableArray arrayWithCapacity:[allItems count]];
         NSInteger selectedIndex = -1;
+        int itemCounter = 0;
         for (NSDictionary *item in allItems){
             NSMutableDictionary *itemData = [NSMutableDictionary dictionaryWithDictionary:item];
-            if ((itemData[@"selected"] && [itemData[@"selected"] intValue]) || (self.selectedValue && [self.selectedValue isEqual:item[@"value"]])){
-                if(selectedIndex == -1)
+            if ((itemData[@"selected"] && [itemData[@"selected"] intValue]) || (self.selectedValue && [self.selectedValue isEqual:item[@"value"]])) {
+                if (selectedIndex == -1) {
                     selectedIndex = [items count];
+                }
+                
                 itemData[@"selected"] = @YES;
-                found = YES;
             }
+            
+            if (!needsReload) {
+                NSDictionary *currentItem = _sections[sectionCounter][@"items"][itemCounter];
+                if (![currentItem isEqualToDictionary:itemData]) {
+                    [indexPathsToReload addObject:[NSIndexPath indexPathForRow:itemCounter inSection:sectionCounter]];
+                }
+            }
+
             [items addObject:itemData];
+            itemCounter++;
         }
         [_selectedIndexes addObject:[NSNumber numberWithUnsignedInteger:selectedIndex]];
         
         sectionData[@"items"] = items;
-        [_sections addObject:sectionData];
+        [tmpSections addObject:sectionData];
+        sectionCounter++;
     }
-    [self.tableView reloadData];
+    
+    _sections = tmpSections;
+    
+    if (needsReload) {
+        NSLog(@"Reloading table");
+        [self.tableView reloadData];
+    } else if (indexPathsToReload.count > 0) {
+        NSLog(@"Reloading %i row(s)", indexPathsToReload.count);
+        [self.tableView reloadRowsAtIndexPaths:indexPathsToReload withRowAnimation:UITableViewRowAnimationNone];
+    }
 }
 
 -(NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
@@ -450,9 +475,12 @@ RCT_NOT_IMPLEMENTED(-initWithCoder:(NSCoder *)aDecoder)
               #import <RNTableView/RNAppGlobals.h>\n\
               [[RNAppGlobals sharedInstance] setAppBridge:rootView.bridge]");
     RNReactModuleCell *cell = [tableView dequeueReusableCellWithIdentifier:_reactModuleCellReuseIndentifier];
+    NSLog(@"setup cell %@", data[@"displayName"]);
     if (cell == nil) {
+        NSLog(@"cell is nil");
         cell = [[RNReactModuleCell alloc] initWithStyle:self.tableViewCellStyle reuseIdentifier:_reactModuleCellReuseIndentifier bridge: _bridge data:data indexPath:indexPath reactModule:_reactModuleForCell tableViewTag:self.reactTag];
     } else {
+        NSLog(@"cell setup");
         [cell setUpAndConfigure:data bridge:_bridge indexPath:indexPath reactModule:_reactModuleForCell tableViewTag:self.reactTag];
     }
     return cell;
@@ -461,7 +489,6 @@ RCT_NOT_IMPLEMENTED(-initWithCoder:(NSCoder *)aDecoder)
 -(UITableViewCell* )tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell = nil;
     NSDictionary *item = [self dataForRow:indexPath.item section:indexPath.section];
-    
     // check if it is standard cell or user-defined UI
     if ([self hasCustomCells:indexPath.section]){
         cell = ((RNCellView *)_cells[indexPath.section][indexPath.row]).tableViewCell;
@@ -512,7 +539,7 @@ RCT_NOT_IMPLEMENTED(-initWithCoder:(NSCoder *)aDecoder)
 }
 
 -(CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
-    if (![self hasCustomCells:indexPath.section]){
+    if (![self hasCustomCells:indexPath.section] || _sections[indexPath.section][@"items"][indexPath.row][@"height"]){
         NSNumber *styleHeight = _sections[indexPath.section][@"items"][indexPath.row][@"height"];
         return styleHeight.floatValue ?: _cellHeight;
     } else {

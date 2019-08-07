@@ -253,7 +253,7 @@ RCT_CUSTOM_VIEW_PROPERTY(footerFontFamily, NSString, RNTableView)
 
 RCT_EXPORT_METHOD(sendNotification:(NSDictionary *)data)
 {
-    [self.bridge.eventDispatcher sendInputEventWithName:@"onItemNotification" body:data];
+    // [self.bridge.eventDispatcher sendInputEventWithName:@"onItemNotification" body:data];
 }
 
 RCT_EXPORT_METHOD(scrollTo:(nonnull NSNumber *)reactTag
